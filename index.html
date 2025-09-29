@@ -1,0 +1,104 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Store Walkthrough — bright & simple</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
+    <script src="https://unpkg.com/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
+    <style>html,body{margin:0;height:100%;background:#2f3033}</style>
+  </head>
+  <body>
+    <a-scene renderer="
+        antialias:true;
+        physicallyCorrectLights:true;
+        colorManagement:true;
+        shadowMap.enabled:true;
+        shadowMap.type:pcfsoft"
+        background="color:#3a3b3f">
+
+      <!-- CHANGE THIS PATH IF YOUR FILE IS DIFFERENT -->
+      <a-assets timeout="60000">
+        <a-asset-item id="room" src="https://ykkuinkyvupwu9iy.public.blob.vercel-storage.com/asset3.glb"></a-asset-item>
+      </a-assets>
+
+      <!-- Bright base fill + key/fill directionals -->
+      <a-entity light="type: ambient; intensity: 0.8"></a-entity>
+      <a-entity id="sun" light="type: directional; intensity: 2.2; castShadow: true" position="10 14 8"></a-entity>
+      <a-entity light="type: directional; intensity: 0.9" position="-10 8 -8"></a-entity>
+
+      <!-- Light floor so the space is never “black” -->
+      <a-plane rotation="-90 0 0" width="600" height="600" color="#a9afb8" shadow="receive:true"></a-plane>
+
+      <!-- Model -->
+      <a-entity id="model" gltf-model="#room" shadow="cast:true; receive:true"></a-entity>
+
+      <!-- Camera: WASD + mouse; start exactly at -10 1.6 6 -->
+      <a-entity id="rig" position="-7 2.2 6" movement-controls>
+        <a-entity camera look-controls wasd-controls></a-entity>
+      </a-entity>
+
+      <!-- Safety: shows until model loads -->
+      <a-box id="sanity" position="-10 1.2 3"
+             material="color:#ff6a00; emissive:#ff6a00; emissiveIntensity:0.9"></a-box>
+    </a-scene>
+
+    <script>
+      const scene = document.querySelector('a-scene');
+      const modelEl = document.getElementById('model');
+      const rigEl = document.getElementById('rig');
+      const sanity = document.getElementById('sanity');
+
+      // Make the renderer bright by default
+      scene.addEventListener('loaded', () => {
+        const r = scene.renderer;
+        if (r) {
+          r.toneMapping = THREE.ACESFilmicToneMapping;
+          r.toneMappingExposure = 2.0; // ↑ if still dim; ↓ if washed (1.6–2.2)
+        }
+      });
+
+      // When model loads: center/scale/drop, then hide sanity box
+      modelEl.addEventListener('model-loaded', () => {
+        const obj = modelEl.getObject3D('mesh');
+        if (!obj) return;
+
+        // Center on origin
+        const box = new THREE.Box3().setFromObject(obj);
+        const size = new THREE.Vector3(); box.getSize(size);
+        const center = new THREE.Vector3(); box.getCenter(center);
+        obj.position.sub(center);
+
+        // Scale to ~12m largest dimension (only if wildly off)
+        const maxDim = Math.max(size.x, size.y, size.z) || 1;
+        const s = 12 / maxDim;
+        if (s < 0.25 || s > 4) modelEl.setAttribute('scale', `${s} ${s} ${s}`);
+
+        // Drop to floor
+        const box2 = new THREE.Box3().setFromObject(obj);
+        obj.position.y -= box2.min.y;
+
+        // Shadows on all meshes
+        obj.traverse(n => { if (n.isMesh){ n.castShadow = true; n.receiveShadow = true; } });
+
+        // Better shadow quality
+        const sun = document.getElementById('sun').getObject3D('light');
+        if (sun && sun.shadow){
+          sun.shadow.mapSize.set(3072,3072);
+          sun.shadow.radius = 2.2;
+          sun.shadow.camera.near = 0.1;
+          sun.shadow.camera.far  = 150;
+        }
+
+        // Hide sanity box now that the model is visible
+        sanity.setAttribute('visible', 'false');
+        console.log('Model loaded & positioned.');
+      });
+
+      modelEl.addEventListener('model-error', (e) => {
+        console.error('Model load error:', e.detail && e.detail.src, e.detail && e.detail.error);
+        sanity.setAttribute('visible','true');
+      });
+    </script>
+  </body>
+</html>
