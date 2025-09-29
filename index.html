@@ -2,40 +2,53 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Store Walkthrough — VR (thumbstick/WASD)</title>
+    <title>Store Walkthrough — refined + gradient sky</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://unpkg.com/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
+    <!-- Gradient sky shader -->
+    <script src="https://unpkg.com/aframe-gradient-sky@1.0.4/dist/gradientsky.min.js"></script>
     <style>html,body{margin:0;height:100%;background:#2f3033}</style>
   </head>
   <body>
     <a-scene id="scene"
-      renderer="antialias:false; physicallyCorrectLights:true; colorManagement:true; shadowMap.enabled:false"
-      background="color:#3a3b3f">
+      renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true; shadowMap.enabled:true; shadowMap.type:pcfsoft">
 
-      <!-- CHANGE this path to your file if needed -->
+      <!-- Assets: update path if you’re using the compressed file -->
       <a-assets timeout="60000">
         <a-asset-item id="room" src="https://ykkuinkyvupwu9iy.public.blob.vercel-storage.com/asset3.glb"></a-asset-item>
       </a-assets>
 
-      <!-- Lighting: simple + fast for headsets -->
-      <a-entity light="type: ambient; intensity: 0.8"></a-entity>
-      <a-entity id="sun" light="type: directional; intensity: 1.2" position="8 12 6"></a-entity>
+      <!-- Soft gradient sky dome (very cheap, nice lift) -->
+      <a-sky material="shader: gradient; topColor: #6c717b; bottomColor: #c7cdd6"></a-sky>
 
-      <!-- Light floor so space is never black -->
-      <a-plane rotation="-90 0 0" width="600" height="600" color="#a9afb8"></a-plane>
+      <!-- Lighting (subtle but brighter): ambient + key + gentle fill -->
+      <a-entity light="type: ambient; intensity: 0.9; color: #ffffff"></a-entity>
+      <a-entity id="sun"
+                light="type: directional; intensity: 1.55; castShadow: true"
+                position="12 14 8"></a-entity>
+      <a-entity light="type: directional; intensity: 0.6; color:#cfd6ff"
+                position="-8 10 -6"></a-entity>
 
-      <!-- Your model -->
-      <a-entity id="model" gltf-model="#room"></a-entity>
+      <!-- Light, neutral floor that receives shadows -->
+      <a-plane rotation="-90 0 0" width="600" height="600"
+               material="color:#b5b9c2; metalness:0.15; roughness:0.7"
+               shadow="receive:true"></a-plane>
 
-      <!-- Camera rig: thumbstick/WASD walking + head look -->
-      <a-entity id="rig" position="-10 1.6 6" movement-controls kinematic-body="radius:0.3; height:1.6; stepHeight:0.2">
-        <a-entity camera look-controls wasd-controls></a-entity>
-      </a-entity>
+      <!-- Model -->
+      <a-entity id="model" gltf-model="#room" shadow="cast:true; receive:true"></a-entity>
 
-      <!-- Safety: visible until model loads, so you never see black -->
-      <a-box id="sanity" position="-10 1.2 3"
-             material="color:#ff6a00; emissive:#ff6a00; emissiveIntensity:0.9"></a-box>
+      <!-- Camera rig (WASD + thumbstick). Start at -7.5 1.6 10 -->
+      <a-entity id="rig" position="-7.5 1.6 -2.5" rotation="0 180 0"
+      movement-controls
+      kinematic-body="radius:0.3; height:1.6; stepHeight:0.2">
+<a-entity camera look-controls wasd-controls></a-entity>
+</a-entity>
+
+      <!-- Safety cube (hidden once model is ready) -->
+      <a-box id="sanity" position="-7.5 1.2 8"
+             material="color:#ff6600; emissive:#ff6600; emissiveIntensity:0.8"></a-box>
     </a-scene>
 
     <script>
@@ -43,19 +56,17 @@
       const model  = document.getElementById('model');
       const sanity = document.getElementById('sanity');
 
-      // Headset-friendly renderer defaults
+      // Subtle global brightness + headset-friendly DPR
       scene.addEventListener('loaded', () => {
         const r = scene.renderer;
         if (!r) return;
         r.toneMapping = THREE.ACESFilmicToneMapping;
-        r.toneMappingExposure = 1.7;
-        // Clamp pixel ratio for Quest-class devices
-        const ua = navigator.userAgent;
-        const isQuest = /Quest|Oculus/i.test(ua);
-        r.setPixelRatio(isQuest ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5));
+        r.toneMappingExposure = 1.85;   // nudge 1.75–2.0 to taste
+        const isQuest = /Quest|Oculus/i.test(navigator.userAgent);
+        r.setPixelRatio(isQuest ? 1.0 : Math.min(window.devicePixelRatio||1, 1.5));
       });
 
-      // Center/scale/drop model, then hide sanity box
+      // Center, scale, drop to floor, then hide the safety cube
       model.addEventListener('model-loaded', () => {
         const obj = model.getObject3D('mesh');
         if (!obj) return;
@@ -65,20 +76,32 @@
         const center = new THREE.Vector3(); box.getCenter(center);
         obj.position.sub(center);
 
-        // Scale to ~12 m largest dimension only if wildly off
+        // Normalize scale to ~12 m only if wildly off
         const maxDim = Math.max(size.x, size.y, size.z) || 1;
         const s = 12 / maxDim;
         if (s < 0.25 || s > 4) model.setAttribute('scale', `${s} ${s} ${s}`);
 
-        // Drop to floor y=0
+        // Sit on floor
         const box2 = new THREE.Box3().setFromObject(obj);
         obj.position.y -= box2.min.y;
 
-        sanity.setAttribute('visible', 'false');
-        console.log('Model loaded.');
+        // Enable shadows without overdoing it
+        obj.traverse(n => { if (n.isMesh){ n.castShadow=true; n.receiveShadow=true; } });
+
+        // Slightly softer, higher-res shadow map
+        const sun = document.getElementById('sun').getObject3D('light');
+        if (sun && sun.shadow){
+          sun.shadow.mapSize.set(2048, 2048);
+          sun.shadow.radius = 2.0;
+          sun.shadow.camera.near = 0.1;
+          sun.shadow.camera.far  = 120;
+        }
+
+        sanity.setAttribute('visible','false');
+        console.log('Model centered, grounded, and lit.');
       });
 
-      model.addEventListener('model-error', (e) => {
+      model.addEventListener('model-error', e => {
         console.error('Model load error:', e.detail?.src, e.detail?.error);
         sanity.setAttribute('visible','true');
       });
