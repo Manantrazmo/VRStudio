@@ -2,10 +2,10 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Store Walkthrough — shelf lighting + proper VR movement</title>
+    <title>Store Walkthrough — tuned lighting + VR movement</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- A-Frame + extras (movement/universal controls) -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
-    <!-- aframe-extras includes movement-controls + universal-controls -->
     <script src="https://unpkg.com/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
     <style>html,body{margin:0;height:100%;background:#2f3033}</style>
   </head>
@@ -19,12 +19,12 @@
         <a-asset-item id="room" src="https://ykkuinkyvupwu9iy.public.blob.vercel-storage.com/se3.glb"></a-asset-item>
       </a-assets>
 
-      <!-- BASE LIGHTING (toned down) -->
-      <a-entity light="type: ambient; intensity: 0.9; color: #ffffff"></a-entity>
-      <a-entity light="type: hemisphere; skyColor: #ffffff; groundColor: #dcdcdc; intensity: 0.6" position="0 8 0"></a-entity>
+      <!-- Base lighting (balanced, not blown out) -->
+      <a-entity light="type: ambient; intensity: 0.9; color: #fff"></a-entity>
+      <a-entity light="type: hemisphere; skyColor:#ffffff; groundColor:#dcdcdc; intensity:0.6" position="0 8 0"></a-entity>
       <a-entity id="sun" light="type: directional; intensity: 0.8; castShadow: true" position="10 14 8"></a-entity>
 
-      <!-- Floor -->
+      <!-- Floor (neutral, shadow receiver) -->
       <a-plane rotation="-90 0 0" width="800" height="800"
                material="color:#cfd5dc; metalness:0.05; roughness:0.85"
                shadow="receive:true"></a-plane>
@@ -32,7 +32,7 @@
       <!-- Model -->
       <a-entity id="model" gltf-model="#room" shadow="cast:true; receive:true"></a-entity>
 
-      <!-- Camera rig: NOW with universal-controls (thumbsticks) -->
+      <!-- Camera rig: WASD + thumbstick movement -->
       <a-entity id="rig"
                 position="0.5 1.6 0.5"
                 rotation="0 180 0"
@@ -42,8 +42,9 @@
         <a-entity camera look-controls></a-entity>
       </a-entity>
 
-      <!-- Safety cube (hidden after model loads) -->
-      <a-box id="sanity" position="0.5 1.2 -1" material="color:#ff6600; emissive:#ff6600; emissiveIntensity:1"></a-box>
+      <!-- Safety cube (hides after model loads) -->
+      <a-box id="sanity" position="0.5 1.2 -1"
+             material="color:#ff6600; emissive:#ff6600; emissiveIntensity:1"></a-box>
     </a-scene>
 
     <script>
@@ -51,29 +52,71 @@
       const model  = document.getElementById('model');
       const sanity = document.getElementById('sanity');
 
-      // Slightly lower global brightness & headset-friendly DPR
+      // Global renderer tune (slightly dimmer than before)
       scene.addEventListener('loaded', () => {
         const r = scene.renderer;
         if (!r) return;
         r.toneMapping = THREE.ACESFilmicToneMapping;
-        r.toneMappingExposure = 0.1; // was ~2.0
+        r.toneMappingExposure = 1.6; // adjust 1.5–1.7 to taste
         const isQuest = /Quest|Oculus/i.test(navigator.userAgent);
-        r.setPixelRatio(isQuest ? 1.0 : Math.min(window.devicePixelRatio||1, 1.5));
+        r.setPixelRatio(isQuest ? 1.0 : Math.min(window.devicePixelRatio || 1, 1.5));
       });
 
-      // ---- CONFIG for shelf/aisle lights (also toned down) ----
-      const AISLE_Y_POINT = 2.2;     // height of point lights along shelves
-      const AISLE_Y_SPOT  = 3.0;     // height of down-facing spotlights
-      const LEFT_X  = -4.0;          // X for left shelf row
-      const RIGHT_X =  4.0;          // X for right shelf row
-      const CENTER_X = 0.0;          // X for middle aisle
+      // ---- Shelf/Aisle lighting config (can be tuned live) ----
+      const AISLE_Y_POINT = 2.2;   // point light height (shelf level)
+      const AISLE_Y_SPOT  = 3.0;   // spot light height (overhead)
+      const LEFT_X   = -4.0;       // left shelf row X
+      const RIGHT_X  =  4.0;       // right shelf row X
+      const CENTER_X =  0.0;       // center aisle X
       const Z_START = -9.0, Z_END = 9.0, Z_STEPS = 5;
+
+      // Single multiplier for all shelf lights:
+      let shelvesMultiplier = 0.6;  // lower = dimmer shelves (try 0.5 if still bright)
+
+      const shelfPoints = [];
+      const shelfSpots  = [];
+
+      function applyShelfIntensity() {
+        shelfPoints.forEach(el => {
+          const baseI = 1.8, baseD = 12;
+          el.setAttribute('light', 'intensity', baseI * shelvesMultiplier);
+          el.setAttribute('light', 'distance', Math.max(6, baseD * shelvesMultiplier));
+        });
+        shelfSpots.forEach(el => {
+          const baseI = 1.1, baseA = 60, baseD = 14;
+          el.setAttribute('light', 'intensity', baseI * shelvesMultiplier);
+          el.setAttribute('light', 'angle', Math.max(45, baseA * shelvesMultiplier + 30));
+          el.setAttribute('light', 'distance', Math.max(8, baseD * shelvesMultiplier));
+        });
+      }
+
+      function addPoint(x,y,z){
+        const el = document.createElement('a-entity');
+        el.setAttribute('position', `${x} ${y} ${z}`);
+        el.setAttribute('light', `type: point; color:#fff; intensity:1; distance:12; decay:2`);
+        scene.appendChild(el);
+        shelfPoints.push(el);
+      }
+      function addSpot(x,y,z){
+        const el = document.createElement('a-entity');
+        el.setAttribute('position', `${x} ${y} ${z}`);
+        el.setAttribute('rotation', `-90 0 0`);
+        el.setAttribute('light', `type: spot; color:#fff; intensity:1; angle:60; penumbra:0.45; distance:14; decay:2`);
+        scene.appendChild(el);
+        shelfSpots.push(el);
+      }
+
+      // Hotkeys to tweak shelf brightness on the fly
+      window.addEventListener('keydown', (e) => {
+        if (e.key === '[') { shelvesMultiplier = Math.max(0.3, shelvesMultiplier - 0.1); applyShelfIntensity(); }
+        if (e.key === ']') { shelvesMultiplier = Math.min(1.5, shelvesMultiplier + 0.1); applyShelfIntensity(); }
+      });
 
       model.addEventListener('model-loaded', () => {
         const obj = model.getObject3D('mesh');
         if (!obj) return;
 
-        // Center / scale (~12m) / drop to floor
+        // Center / normalize scale (~12m) / drop to floor
         const box = new THREE.Box3().setFromObject(obj);
         const size = new THREE.Vector3(); box.getSize(size);
         const center = new THREE.Vector3(); box.getCenter(center);
@@ -88,32 +131,18 @@
         const sun = document.getElementById('sun').getObject3D('light');
         if (sun && sun.shadow){ sun.shadow.mapSize.set(2048,2048); sun.shadow.radius = 2; }
 
-        // Material safety
+        // Material safety (avoid crushed blacks / backface issues)
         obj.traverse(n => {
           if (!n.isMesh || !n.material) return;
           const m = n.material;
           if ('metalness' in m)  m.metalness  = Math.min(0.1, m.metalness || 0);
           if ('roughness' in m) m.roughness = Math.min(0.8, Math.max(0.3, m.roughness || 0.7));
-          if (m.emissive) { m.emissive.setRGB(0.04,0.04,0.04); m.emissiveIntensity = Math.max(0.7, m.emissiveIntensity||0.7); }
+          if (m.emissive) { m.emissive.setRGB(0.04,0.04,0.04); m.emissiveIntensity = Math.max(0.7, m.emissiveIntensity || 0.7); }
           m.side = THREE.DoubleSide;
           m.needsUpdate = true;
         });
 
-        // Build aisle lights (reduced intensities)
-        const addPoint = (x,y,z,intensity=1.8, distance=12, decay=2) => {
-          const el = document.createElement('a-entity');
-          el.setAttribute('position', `${x} ${y} ${z}`);
-          el.setAttribute('light', `type: point; intensity: ${intensity}; distance: ${distance}; decay: ${decay}; color: #ffffff`);
-          scene.appendChild(el);
-        };
-        const addSpot = (x,y,z,intensity=1.1, angle=55, penumbra=0.45, distance=14) => {
-          const el = document.createElement('a-entity');
-          el.setAttribute('position', `${x} ${y} ${z}`);
-          el.setAttribute('rotation', `-90 0 0`);
-          el.setAttribute('light', `type: spot; intensity: ${intensity}; angle: ${angle}; penumbra: ${penumbra}; distance: ${distance}; decay: 2; color: #ffffff`);
-          scene.appendChild(el);
-        };
-
+        // Build aisle lights
         const step = (Z_END - Z_START) / (Z_STEPS - 1);
         for (let i=0;i<Z_STEPS;i++){
           const z = Z_START + i*step;
@@ -121,9 +150,10 @@
           addPoint(RIGHT_X, AISLE_Y_POINT, z);
           addSpot(CENTER_X, AISLE_Y_SPOT, z);
         }
+        applyShelfIntensity();
 
         sanity.setAttribute('visible', 'false');
-        console.log('Model ready; lights + VR thumbsticks enabled.');
+        console.log('Model ready; VR thumbsticks enabled; shelf lights tuned.');
       });
 
       model.addEventListener('model-error', e => {
