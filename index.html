@@ -2,53 +2,44 @@
 <html>
   <head>
     <meta charset="utf-8" />
-    <title>Store Walkthrough — refined + gradient sky</title>
+    <title>Store Walkthrough — shelf lighting</title>
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <!-- A-Frame -->
     <script src="https://aframe.io/releases/1.5.0/aframe.min.js"></script>
     <script src="https://unpkg.com/aframe-extras@7.7.0/dist/aframe-extras.min.js"></script>
-    <!-- Gradient sky shader -->
-    <script src="https://unpkg.com/aframe-gradient-sky@1.0.4/dist/gradientsky.min.js"></script>
     <style>html,body{margin:0;height:100%;background:#2f3033}</style>
   </head>
   <body>
     <a-scene id="scene"
-      renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true; shadowMap.enabled:true; shadowMap.type:pcfsoft">
+      renderer="antialias:true; physicallyCorrectLights:true; colorManagement:true; shadowMap.enabled:true; shadowMap.type:pcfsoft"
+      background="color:#e8ebf0">
 
-      <!-- Assets: update path if you’re using the compressed file -->
+      <!-- Assets -->
       <a-assets timeout="60000">
         <a-asset-item id="room" src="https://ykkuinkyvupwu9iy.public.blob.vercel-storage.com/se3.glb"></a-asset-item>
       </a-assets>
 
-      <!-- Soft gradient sky dome (very cheap, nice lift) -->
-      <a-sky material="shader: gradient; topColor: #6c717b; bottomColor: #c7cdd6"></a-sky>
+      <!-- BASE LIGHTING (bright but soft) -->
+      <a-entity light="type: ambient; intensity: 1.15; color: #ffffff"></a-entity>
+      <a-entity light="type: hemisphere; skyColor: #ffffff; groundColor: #dcdcdc; intensity: 0.9" position="0 8 0"></a-entity>
+      <a-entity id="sun" light="type: directional; intensity: 0.9; castShadow: true" position="10 14 8"></a-entity>
 
-      <!-- Lighting (subtle but brighter): ambient + key + gentle fill -->
-      <a-entity light="type: ambient; intensity: 0.9; color: #ffffff"></a-entity>
-      <a-entity id="sun"
-                light="type: directional; intensity: 1.55; castShadow: true"
-                position="12 14 8"></a-entity>
-      <a-entity light="type: directional; intensity: 0.6; color:#cfd6ff"
-                position="-8 10 -6"></a-entity>
-
-      <!-- Light, neutral floor that receives shadows -->
-      <a-plane rotation="-90 0 0" width="600" height="600"
-               material="color:#b5b9c2; metalness:0.15; roughness:0.7"
+      <!-- Floor (neutral, receives shadows) -->
+      <a-plane rotation="-90 0 0" width="800" height="800"
+               material="color:#cfd5dc; metalness:0.05; roughness:0.85"
                shadow="receive:true"></a-plane>
 
       <!-- Model -->
       <a-entity id="model" gltf-model="#room" shadow="cast:true; receive:true"></a-entity>
 
-      <!-- Camera rig (WASD + thumbstick). Start at -7.5 1.6 10 -->
+      <!-- Camera rig -->
       <a-entity id="rig" position="0.5 1.6 0.5" rotation="0 180 0"
-      movement-controls
-      kinematic-body="radius:0.3; height:1.6; stepHeight:0.2">
-<a-entity camera look-controls wasd-controls></a-entity>
-</a-entity>
+                movement-controls
+                kinematic-body="radius:0.3; height:1.6; stepHeight:0.2">
+        <a-entity camera look-controls wasd-controls></a-entity>
+      </a-entity>
 
-      <!-- Safety cube (hidden once model is ready) -->
-      <a-box id="sanity" position="-7.5 1.2 8"
-             material="color:#ff6600; emissive:#ff6600; emissiveIntensity:0.8"></a-box>
+      <!-- Safety cube (hidden after model loads) -->
+      <a-box id="sanity" position="0.5 1.2 -1" material="color:#ff6600; emissive:#ff6600; emissiveIntensity:1"></a-box>
     </a-scene>
 
     <script>
@@ -56,49 +47,81 @@
       const model  = document.getElementById('model');
       const sanity = document.getElementById('sanity');
 
-      // Subtle global brightness + headset-friendly DPR
+      // Headset-friendly renderer + brighter exposure
       scene.addEventListener('loaded', () => {
         const r = scene.renderer;
         if (!r) return;
         r.toneMapping = THREE.ACESFilmicToneMapping;
-        r.toneMappingExposure = 1.85;   // nudge 1.75–2.0 to taste
+        r.toneMappingExposure = 2.0; // 1.9–2.2 range
         const isQuest = /Quest|Oculus/i.test(navigator.userAgent);
         r.setPixelRatio(isQuest ? 1.0 : Math.min(window.devicePixelRatio||1, 1.5));
       });
 
-      // Center, scale, drop to floor, then hide the safety cube
+      // ---- CONFIG: where to place shelf/aisle lights (edit these) ----
+      const AISLE_Y_POINT = 2.2;     // height of point lights along shelves
+      const AISLE_Y_SPOT  = 3.0;     // height of down-facing spotlights
+      const LEFT_X  = -4.0;          // X for left shelf row
+      const RIGHT_X =  4.0;          // X for right shelf row
+      const CENTER_X = 0.0;          // X for middle aisle
+      const Z_START = -9.0, Z_END = 9.0, Z_STEPS = 5; // how many lights along depth
+
       model.addEventListener('model-loaded', () => {
         const obj = model.getObject3D('mesh');
         if (!obj) return;
 
+        // Center / scale (~12m) / drop to floor
         const box = new THREE.Box3().setFromObject(obj);
         const size = new THREE.Vector3(); box.getSize(size);
         const center = new THREE.Vector3(); box.getCenter(center);
         obj.position.sub(center);
-
-        // Normalize scale to ~12 m only if wildly off
         const maxDim = Math.max(size.x, size.y, size.z) || 1;
         const s = 12 / maxDim;
         if (s < 0.25 || s > 4) model.setAttribute('scale', `${s} ${s} ${s}`);
-
-        // Sit on floor
         const box2 = new THREE.Box3().setFromObject(obj);
         obj.position.y -= box2.min.y;
 
-        // Enable shadows without overdoing it
-        obj.traverse(n => { if (n.isMesh){ n.castShadow=true; n.receiveShadow=true; } });
-
-        // Slightly softer, higher-res shadow map
+        // Shadow quality
         const sun = document.getElementById('sun').getObject3D('light');
-        if (sun && sun.shadow){
-          sun.shadow.mapSize.set(2048, 2048);
-          sun.shadow.radius = 2.0;
-          sun.shadow.camera.near = 0.1;
-          sun.shadow.camera.far  = 120;
+        if (sun && sun.shadow){ sun.shadow.mapSize.set(2048,2048); sun.shadow.radius = 2; }
+
+        // Material safety: avoid super-dark rough metal, show backfaces
+        obj.traverse(n => {
+          if (!n.isMesh || !n.material) return;
+          const m = n.material;
+          if ('metalness' in m)  m.metalness  = Math.min(0.1, m.metalness || 0);
+          if ('roughness' in m) m.roughness = Math.min(0.8, Math.max(0.3, m.roughness || 0.7));
+          if (m.emissive) { m.emissive.setRGB(0.05,0.05,0.05); m.emissiveIntensity = Math.max(0.8, m.emissiveIntensity||0.8); }
+          m.side = THREE.DoubleSide;
+          m.needsUpdate = true;
+        });
+
+        // Build aisle lights
+        const addPoint = (x,y,z,intensity=2.2, distance=12, decay=2) => {
+          const el = document.createElement('a-entity');
+          el.setAttribute('position', `${x} ${y} ${z}`);
+          el.setAttribute('light', `type: point; intensity: ${intensity}; distance: ${distance}; decay: ${decay}; color: #ffffff`);
+          scene.appendChild(el);
+        };
+        const addSpot = (x,y,z,intensity=1.4, angle=60, penumbra=0.5, distance=14) => {
+          const el = document.createElement('a-entity');
+          el.setAttribute('position', `${x} ${y} ${z}`);
+          el.setAttribute('rotation', `-90 0 0`);
+          el.setAttribute('light', `type: spot; intensity: ${intensity}; angle: ${angle}; penumbra: ${penumbra}; distance: ${distance}; decay: 2; color: #ffffff`);
+          scene.appendChild(el);
+        };
+
+        const step = (Z_END - Z_START) / (Z_STEPS - 1);
+        for (let i=0;i<Z_STEPS;i++){
+          const z = Z_START + i*step;
+          // point lights hugging left & right shelves
+          addPoint(LEFT_X,  AISLE_Y_POINT, z);
+          addPoint(RIGHT_X, AISLE_Y_POINT, z);
+          // soft spotlights down the center aisle
+          addSpot(CENTER_X, AISLE_Y_SPOT, z);
         }
 
-        sanity.setAttribute('visible','false');
-        console.log('Model centered, grounded, and lit.');
+        sanity.setAttribute('visible', 'false');
+        console.log('Model ready + shelf lights placed.');
       });
 
       model.addEventListener('model-error', e => {
